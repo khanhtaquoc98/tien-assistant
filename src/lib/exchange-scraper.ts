@@ -1,15 +1,7 @@
-/**
- * Exchange Rate Scraper - Vietcombank
- * Crawl tỷ giá ngoại tệ từ API Vietcombank và lưu vào file JSON
- * Có cache 5 phút
- */
-
-import fs from 'fs';
-import path from 'path';
+import { readJsonFile, writeJsonFile } from './data-store';
 
 const VCB_API = 'https://www.vietcombank.com.vn/api/exchangerates?date=';
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DATA_FILE = path.join(DATA_DIR, 'exchange_rates.json');
+const DATA_FILENAME = 'exchange_rates.json';
 const CACHE_DURATION_MS = 5 * 60 * 1000;
 
 export interface ExchangeRate {
@@ -28,25 +20,12 @@ export interface ExchangeData {
   source: string;
 }
 
-function ensureDataDir(): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
-
 export function readExchangeData(): ExchangeData | null {
-  try {
-    if (!fs.existsSync(DATA_FILE)) return null;
-    const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-    return JSON.parse(raw) as ExchangeData;
-  } catch {
-    return null;
-  }
+  return readJsonFile<ExchangeData>(DATA_FILENAME);
 }
 
 export function writeExchangeData(data: ExchangeData): void {
-  ensureDataDir();
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  writeJsonFile(DATA_FILENAME, data);
 }
 
 export function isExchangeDataStale(data: ExchangeData | null): boolean {

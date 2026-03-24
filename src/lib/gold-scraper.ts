@@ -1,15 +1,7 @@
-/**
- * Gold Price Scraper
- * Crawl giá vàng từ API mihong.vn và lưu vào file JSON
- * Có cache 5 phút - nếu data cũ > 5p sẽ crawl lại
- */
-
-import fs from 'fs';
-import path from 'path';
+import { readJsonFile, writeJsonFile } from './data-store';
 
 const GOLD_API_URL = 'https://api.mihong.vn/v1/gold-prices?market=domestic';
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DATA_FILE = path.join(DATA_DIR, 'gold_prices.json');
+const DATA_FILENAME = 'gold_prices.json';
 const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 phút
 
 export interface GoldPrice {
@@ -25,39 +17,17 @@ export interface GoldPrice {
 
 export interface GoldData {
   prices: GoldPrice[];
-  crawledAt: string;       // ISO timestamp khi crawl
-  crawledAtMs: number;     // timestamp ms để tính cache
+  crawledAt: string;
+  crawledAtMs: number;
   source: string;
 }
 
-/**
- * Đảm bảo thư mục data tồn tại
- */
-function ensureDataDir(): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
-
-/**
- * Đọc data từ file JSON
- */
 export function readGoldData(): GoldData | null {
-  try {
-    if (!fs.existsSync(DATA_FILE)) return null;
-    const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-    return JSON.parse(raw) as GoldData;
-  } catch {
-    return null;
-  }
+  return readJsonFile<GoldData>(DATA_FILENAME);
 }
 
-/**
- * Ghi data vào file JSON
- */
 export function writeGoldData(data: GoldData): void {
-  ensureDataDir();
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  writeJsonFile(DATA_FILENAME, data);
 }
 
 /**

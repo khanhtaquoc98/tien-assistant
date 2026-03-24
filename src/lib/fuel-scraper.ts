@@ -1,17 +1,9 @@
-/**
- * Fuel Price Scraper - PVOIL
- * Crawl giá xăng dầu từ pvoil.com.vn và lưu vào file JSON
- * Có cache 5 phút
- */
-
-import fs from 'fs';
-import path from 'path';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { readJsonFile, writeJsonFile } from './data-store';
 
 const FUEL_URL = 'https://www.pvoil.com.vn/tin-gia-xang-dau';
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DATA_FILE = path.join(DATA_DIR, 'fuel_prices.json');
+const DATA_FILENAME = 'fuel_prices.json';
 const CACHE_DURATION_MS = 5 * 60 * 1000;
 
 export interface FuelPrice {
@@ -31,25 +23,12 @@ export interface FuelData {
   source: string;
 }
 
-function ensureDataDir(): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
-
 export function readFuelData(): FuelData | null {
-  try {
-    if (!fs.existsSync(DATA_FILE)) return null;
-    const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-    return JSON.parse(raw) as FuelData;
-  } catch {
-    return null;
-  }
+  return readJsonFile<FuelData>(DATA_FILENAME);
 }
 
 export function writeFuelData(data: FuelData): void {
-  ensureDataDir();
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  writeJsonFile(DATA_FILENAME, data);
 }
 
 export function isFuelDataStale(data: FuelData | null): boolean {
