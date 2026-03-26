@@ -6,6 +6,7 @@
 import { getGoldPrices, formatGoldForTelegram } from './gold-scraper';
 import { getFuelPrices, formatFuelForTelegram } from './fuel-scraper';
 import { getExchangeRates, formatExchangeForTelegram } from './exchange-scraper';
+import { getFootballSchedule, formatFootballForTelegram } from './football-scraper';
 
 const TELEGRAM_API = 'https://api.telegram.org/bot';
 
@@ -171,39 +172,15 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
 
     switch (command) {
       case '/start':
+      case '/help':
         await sendMessage(chatId,
           `👋 Xin chào <b>${username}</b>!\n\n` +
           `Tôi là bot thông tin. Các lệnh:\n\n` +
           `💰 /giavang - Giá vàng trong nước\n` +
           `⛽ /giaxang - Giá xăng dầu PVOIL\n` +
           `💱 /ngoaite - Tỷ giá Vietcombank\n` +
-          `📰 /scrape [url] - Scrape trang web\n` +
-          `ℹ️ /info - Thông tin bot\n` +
+          `⚽ /lichbongda - Lịch thi đấu bóng đá\n` +
           `❓ /help - Trợ giúp`,
-          { parse_mode: 'HTML' }
-        );
-        break;
-
-      case '/help':
-        await sendMessage(chatId,
-          `📚 <b>Hướng dẫn sử dụng</b>\n\n` +
-          `<b>Các lệnh:</b>\n` +
-          `• /giavang - Giá vàng (cache 5 phút)\n` +
-          `• /giaxang - Giá xăng dầu PVOIL (cache 5 phút)\n` +
-          `• /ngoaite - Tỷ giá ngoại tệ VCB (cache 5 phút)\n` +
-          `• /scrape [url] - Scrape nội dung trang web\n` +
-          `• /info - Thông tin bot\n\n` +
-          `💡 Data được cache 5 phút. Nếu data cũ sẽ tự crawl lại.`,
-          { parse_mode: 'HTML' }
-        );
-        break;
-
-      case '/info':
-        await sendMessage(chatId,
-          `🤖 <b>Bot Information</b>\n\n` +
-          `• Framework: Next.js\n` +
-          `• Features: Giá vàng, Giá xăng, Tỷ giá, Scraping\n` +
-          `• Chat ID: <code>${chatId}</code>`,
           { parse_mode: 'HTML' }
         );
         break;
@@ -229,64 +206,13 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
         });
         break;
 
-      case '/scrape': {
-        if (!args) {
-          await sendMessage(chatId, '⚠️ Vui lòng cung cấp URL.\n\nVí dụ: /scrape https://example.com');
-          return;
-        }
-
-        // Send pending message
-        const pendingRes = await sendMessage(chatId, `⏳ Hệ thống đang thu thập dữ liệu từ <code>${args}</code>...`, { parse_mode: 'HTML' });
-        const pendingMsgId = pendingRes.result?.message_id;
-
-        try {
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-          const scrapeResponse = await fetch(`${appUrl}/api/scrape`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: args }),
-          });
-          const scrapeResult = await scrapeResponse.json();
-
-          if (scrapeResult.success) {
-            const result = scrapeResult.data;
-            let responseText =
-              `✅ <b>Thu thập thành công</b>\n\n` +
-              `📌 <b>Tiêu đề:</b> ${result.title || 'N/A'}\n` +
-              `📝 <b>Mô tả:</b> ${result.description || 'N/A'}\n` +
-              `🔗 <b>URL:</b> ${result.url}\n\n`;
-
-            if (result.headings?.length > 0) {
-              responseText += `📋 <b>Headings:</b>\n`;
-              result.headings.slice(0, 10).forEach((h: { tag: string; text: string }) => {
-                responseText += `• [${h.tag}] ${h.text}\n`;
-              });
-            }
-            if (responseText.length > 4000) responseText = responseText.substring(0, 3997) + '...';
-
-            if (pendingMsgId) {
-              await editMessage(chatId, pendingMsgId, responseText, { parse_mode: 'HTML' });
-            } else {
-              await sendMessage(chatId, responseText, { parse_mode: 'HTML' });
-            }
-          } else {
-            const errMsg = `❌ Thu thập thất bại!\n\n<code>${scrapeResult.error}</code>`;
-            if (pendingMsgId) {
-              await editMessage(chatId, pendingMsgId, errMsg, { parse_mode: 'HTML' });
-            } else {
-              await sendMessage(chatId, errMsg, { parse_mode: 'HTML' });
-            }
-          }
-        } catch (error) {
-          const errMsg = `❌ Thu thập thất bại!\n\n<code>${(error as Error).message}</code>`;
-          if (pendingMsgId) {
-            await editMessage(chatId, pendingMsgId, errMsg, { parse_mode: 'HTML' });
-          } else {
-            await sendMessage(chatId, errMsg, { parse_mode: 'HTML' });
-          }
-        }
+      case '/lichbongda':
+        await crawlAndReply(chatId, 'Lịch Thi Đấu Bóng Đá', async () => {
+          const { data, fromCache } = await getFootballSchedule();
+          return { msg: formatFootballForTelegram(data), fromCache, crawledAtMs: data.crawledAtMs };
+        });
         break;
-      }
+
 
       default:
         await sendMessage(chatId, `❓ Lệnh không hỗ trợ. Gõ /help để xem danh sách lệnh.`);
