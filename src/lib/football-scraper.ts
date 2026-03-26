@@ -1,22 +1,41 @@
 import axios from 'axios';
-import * as cheerio from 'cheerio';
 import { readJsonFile, writeJsonFile } from './data-store';
 
-const FOOTBALL_URL = 'https://bongdaplus.vn/lich-thi-dau-bong-da';
+const FOOTBALL_API_URL = 'https://data.bongdaplus.vn/data/lich-thi-dau-bong-da.json';
 const DATA_FILENAME = 'football_schedule.json';
 const CACHE_DURATION_MS = 60 * 60 * 1000; // 1 tiếng
+
+/** Raw match from bongdaplus API */
+interface RawMatch {
+  tournament: {
+    tournament_id: string;
+    tournament_name: string;
+    tournament_slug: string;
+    tournament_logo: string;
+  };
+  match_id: string;
+  round_name: string;
+  home_name: string;
+  away_name: string;
+  start_time: string;   // "2026-03-26 17:30:00"
+  play_time: string;     // "17:30"
+  goals_home: number;
+  goals_away: number;
+  status: number;        // 0 = chưa đá, 1 = đang đá, 2 = kết thúc
+}
 
 export interface FootballMatch {
   time: string;
   homeTeam: string;
   awayTeam: string;
-  score: string; // "vs" hoặc tỉ số nếu đã đấu
+  score: string;
+  status: number;
 }
 
 export interface LeagueSchedule {
   league: string;
-  date: string;
-  round: string; // e.g. "Vòng 5"
+  date: string;         // DD/MM/YYYY
+  round: string;
   matches: FootballMatch[];
 }
 
@@ -41,119 +60,102 @@ export function isFootballDataStale(data: FootballData | null): boolean {
 }
 
 /**
- * Lấy ngày hôm nay và ngày mai theo timezone Việt Nam (DD/MM/YYYY)
+ * Lấy ngày hôm nay và ngày mai theo timezone Việt Nam (YYYY-MM-DD)
  */
-function getTodayAndTomorrow(): { today: string; tomorrow: string } {
+function getTodayAndTomorrow(): { today: string; tomorrow: string; todayDisplay: string; tomorrowDisplay: string } {
   const now = new Date();
-  // Chuyển sang timezone Việt Nam (+7)
   const vnNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
 
-  const todayDD = String(vnNow.getDate()).padStart(2, '0');
-  const todayMM = String(vnNow.getMonth() + 1).padStart(2, '0');
   const todayYYYY = vnNow.getFullYear();
-  const today = `${todayDD}/${todayMM}/${todayYYYY}`;
+  const todayMM = String(vnNow.getMonth() + 1).padStart(2, '0');
+  const todayDD = String(vnNow.getDate()).padStart(2, '0');
+  const today = `${todayYYYY}-${todayMM}-${todayDD}`;
+  const todayDisplay = `${todayDD}/${todayMM}/${todayYYYY}`;
 
   const tmr = new Date(vnNow);
   tmr.setDate(tmr.getDate() + 1);
-  const tmrDD = String(tmr.getDate()).padStart(2, '0');
-  const tmrMM = String(tmr.getMonth() + 1).padStart(2, '0');
   const tmrYYYY = tmr.getFullYear();
-  const tomorrow = `${tmrDD}/${tmrMM}/${tmrYYYY}`;
+  const tmrMM = String(tmr.getMonth() + 1).padStart(2, '0');
+  const tmrDD = String(tmr.getDate()).padStart(2, '0');
+  const tomorrow = `${tmrYYYY}-${tmrMM}-${tmrDD}`;
+  const tomorrowDisplay = `${tmrDD}/${tmrMM}/${tmrYYYY}`;
 
-  return { today, tomorrow };
+  return { today, tomorrow, todayDisplay, tomorrowDisplay };
 }
 
 /**
- * Crawl lịch thi đấu bóng đá từ bongdaplus.vn
+ * Crawl lịch thi đấu bóng đá từ API bongdaplus.vn
  * Chỉ lấy dữ liệu hôm nay và ngày mai
  */
 export async function crawlFootballSchedule(): Promise<FootballData> {
-  const response = await axios.get(FOOTBALL_URL, {
+  const response = await axios.get<RawMatch[]>(FOOTBALL_API_URL, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-      'Accept': 'text/html,application/xhtml+xml',
-      'Accept-Language': 'vi-VN,vi;q=0.9,en;q=0.8',
+      'Accept': 'application/json',
+      'Referer': 'https://bongdaplus.vn/',
     },
+    params: { _: Date.now() }, // cache buster
     timeout: 15000,
   });
 
-  const $ = cheerio.load(response.data);
-  const { today, tomorrow } = getTodayAndTomorrow();
-  const targetDates = [today, tomorrow];
-
-  const schedules: LeagueSchedule[] = [];
-  let currentLeague = '';
-  let currentDate = '';
-  let currentRound = '';
-
-  // Iterate through all children inside the fixt-list container
-  const container = $('#tblTnms .fixt-list');
-  if (!container.length) {
-    throw new Error('Không tìm thấy bảng lịch thi đấu trên bongdaplus.vn');
+  const rawMatches = response.data;
+  if (!Array.isArray(rawMatches) || rawMatches.length === 0) {
+    throw new Error('Không có dữ liệu lịch thi đấu từ bongdaplus.vn');
   }
 
-  container.children().each((_, el) => {
-    const $el = $(el);
+  const { today, tomorrow, todayDisplay, tomorrowDisplay } = getTodayAndTomorrow();
 
-    // League header: div.fx-leag > a.all-cap > b
-    if ($el.hasClass('fx-leag')) {
-      currentLeague = $el.find('a.all-cap b').text().trim();
-      return; // continue
-    }
-
-    // Date header: div.fx-date
-    if ($el.hasClass('fx-date')) {
-      const dateText = $el.text().trim();
-      // Extract date from "Vòng 5 - Ngày 26/03/2026" or "Ngày 26/03/2026"
-      const dateMatch = dateText.match(/(\d{2}\/\d{2}\/\d{4})/);
-      if (dateMatch) {
-        currentDate = dateMatch[1];
-      }
-      // Extract round info
-      const roundMatch = dateText.match(/(Vòng\s+\S+)/);
-      currentRound = roundMatch ? roundMatch[1] : '';
-      return; // continue
-    }
-
-    // Match row: a.fx-match
-    if ($el.hasClass('fx-match')) {
-      // Only keep matches for today or tomorrow
-      if (!targetDates.includes(currentDate)) return;
-
-      const time = $el.find('.mch-time b').text().trim();
-      const homeTeam = $el.find('.mch-home').text().trim();
-      const awayTeam = $el.find('.mch-away').text().trim();
-      const score = $el.find('.mch-score').text().trim();
-
-      if (homeTeam && awayTeam) {
-        // Find or create league schedule entry
-        let leagueEntry = schedules.find(
-          (s) => s.league === currentLeague && s.date === currentDate
-        );
-        if (!leagueEntry) {
-          leagueEntry = {
-            league: currentLeague,
-            date: currentDate,
-            round: currentRound,
-            matches: [],
-          };
-          schedules.push(leagueEntry);
-        }
-        leagueEntry.matches.push({ time, homeTeam, awayTeam, score });
-      }
-    }
+  // Filter matches for today & tomorrow only
+  const filteredMatches = rawMatches.filter((m) => {
+    const matchDate = m.start_time.split(' ')[0]; // "2026-03-26"
+    return matchDate === today || matchDate === tomorrow;
   });
 
-  if (schedules.length === 0) {
-    throw new Error(`Không tìm thấy trận đấu nào cho ngày ${today} hoặc ${tomorrow}`);
+  // Group by tournament + date
+  const scheduleMap = new Map<string, LeagueSchedule>();
+
+  for (const m of filteredMatches) {
+    const matchDate = m.start_time.split(' ')[0];
+    const dateDisplay = matchDate === today ? todayDisplay : tomorrowDisplay;
+    const key = `${m.tournament.tournament_name}__${matchDate}`;
+
+    let schedule = scheduleMap.get(key);
+    if (!schedule) {
+      const roundText = m.round_name && m.round_name !== '0' ? `Vòng ${m.round_name}` : '';
+      schedule = {
+        league: m.tournament.tournament_name,
+        date: dateDisplay,
+        round: roundText,
+        matches: [],
+      };
+      scheduleMap.set(key, schedule);
+    }
+
+    // Determine score display
+    let score = 'vs';
+    if (m.status === 2) {
+      score = `${m.goals_home} - ${m.goals_away}`;
+    } else if (m.status === 1) {
+      score = `${m.goals_home} - ${m.goals_away}`;
+    }
+
+    schedule.matches.push({
+      time: m.play_time,
+      homeTeam: m.home_name,
+      awayTeam: m.away_name,
+      score,
+      status: m.status,
+    });
   }
+
+  const schedules = Array.from(scheduleMap.values());
 
   const now = new Date();
   const footballData: FootballData = {
     schedules,
     crawledAt: now.toISOString(),
     crawledAtMs: now.getTime(),
-    source: FOOTBALL_URL,
+    source: FOOTBALL_API_URL,
   };
 
   writeFootballData(footballData);
@@ -178,7 +180,7 @@ export async function getFootballSchedule(
  * Format lịch bóng đá cho Telegram message
  */
 export function formatFootballForTelegram(data: FootballData): string {
-  const { today, tomorrow } = getTodayAndTomorrow();
+  const { todayDisplay, tomorrowDisplay } = getTodayAndTomorrow();
 
   const crawlTime = new Date(data.crawledAt).toLocaleString('vi-VN', {
     timeZone: 'Asia/Ho_Chi_Minh',
@@ -188,18 +190,21 @@ export function formatFootballForTelegram(data: FootballData): string {
   msg += `🕐 Cập nhật: <code>${crawlTime}</code>\n`;
   msg += `━━━━━━━━━━━━━━━━━━\n`;
 
-  // Group by date
-  const todaySchedules = data.schedules.filter((s) => s.date === today);
-  const tomorrowSchedules = data.schedules.filter((s) => s.date === tomorrow);
+  const todaySchedules = data.schedules.filter((s) => s.date === todayDisplay);
+  const tomorrowSchedules = data.schedules.filter((s) => s.date === tomorrowDisplay);
 
   if (todaySchedules.length > 0) {
-    msg += `\n📅 <b>HÔM NAY - ${today}</b>\n\n`;
+    msg += `\n📅 <b>HÔM NAY - ${todayDisplay}</b>\n\n`;
     msg += formatDaySchedule(todaySchedules);
   }
 
   if (tomorrowSchedules.length > 0) {
-    msg += `\n📅 <b>NGÀY MAI - ${tomorrow}</b>\n\n`;
+    msg += `\n📅 <b>NGÀY MAI - ${tomorrowDisplay}</b>\n\n`;
     msg += formatDaySchedule(tomorrowSchedules);
+  }
+
+  if (todaySchedules.length === 0 && tomorrowSchedules.length === 0) {
+    msg += `\n📭 Không có trận đấu nào hôm nay và ngày mai.\n`;
   }
 
   msg += `━━━━━━━━━━━━━━━━━━\n`;
@@ -216,9 +221,17 @@ function formatDaySchedule(schedules: LeagueSchedule[]): string {
     msg += `🏆 <b>${schedule.league}</b>${roundText}\n`;
 
     for (const match of schedule.matches) {
-      const timeIcon = match.score === 'vs' ? '🕐' : '✅';
-      const scoreDisplay = match.score === 'vs' ? 'vs' : match.score;
-      msg += `  ${timeIcon} <code>${match.time}</code>  ${match.homeTeam} <b>${scoreDisplay}</b> ${match.awayTeam}\n`;
+      let icon = '🕐';
+      let scoreDisplay = match.score;
+      if (match.status === 2) {
+        icon = '✅';
+        scoreDisplay = match.score;
+      } else if (match.status === 1) {
+        icon = '🔴';
+        scoreDisplay = match.score;
+      }
+
+      msg += `  ${icon} <code>${match.time}</code>  ${match.homeTeam} <b>${scoreDisplay}</b> ${match.awayTeam}\n`;
     }
     msg += `\n`;
   }
