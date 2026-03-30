@@ -65,6 +65,9 @@ export async function crawlGospel(): Promise<GospelData> {
         const content = $(el).find('.section__content');
         
         content.find('p').each((idx, pEl) => {
+          // Loại bỏ các thẻ <sup> (chứa số câu) để nội dung đọc liền mạch hơn
+          $(pEl).find('sup').remove();
+          
           const text = $(pEl).text().trim();
           // Skip generic footer lines
           if (text && !text.includes('GÓP Ý CẢI THIỆN') && !text.includes('LINK FORM')) {
