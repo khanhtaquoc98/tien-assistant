@@ -7,6 +7,7 @@ import { getGoldPrices, formatGoldForTelegram } from './gold-scraper';
 import { getFuelPrices, formatFuelForTelegram } from './fuel-scraper';
 import { getExchangeRates, formatExchangeForTelegram } from './exchange-scraper';
 import { getFootballSchedule, formatFootballForTelegram } from './football-scraper';
+import { getGospel, formatGospelForTelegram } from './gospel-scraper';
 
 const TELEGRAM_API = 'https://api.telegram.org/bot';
 
@@ -180,6 +181,7 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
           `⛽ /giaxang - Giá xăng dầu PVOIL\n` +
           `💱 /ngoaite - Tỷ giá Vietcombank\n` +
           `⚽ /lichbongda - Lịch thi đấu bóng đá\n` +
+          `📖 /loichuahomnay - Lời Chúa ngày hôm nay\n` +
           `❓ /help - Trợ giúp`,
           { parse_mode: 'HTML' }
         );
@@ -210,6 +212,13 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
         await crawlAndReply(chatId, 'Lịch Thi Đấu Bóng Đá', async () => {
           const { data, fromCache } = await getFootballSchedule();
           return { msg: formatFootballForTelegram(data), fromCache, crawledAtMs: data.crawledAtMs };
+        });
+        break;
+
+      case '/loichuahomnay':
+        await crawlAndReply(chatId, 'Lời Chúa Hôm Nay', async () => {
+          const { data, fromCache } = await getGospel();
+          return { msg: formatGospelForTelegram(data), fromCache, crawledAtMs: data.crawledAtMs };
         });
         break;
 

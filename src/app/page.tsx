@@ -66,6 +66,7 @@ const thStyle: React.CSSProperties = { padding: "14px 20px", textAlign: "left", 
 const tdStyle: React.CSSProperties = { padding: "12px 20px", fontSize: "0.9rem" };
 
 function PanelHeader({ icon, title, crawledAt, crawledAtMs, fromCache, loading, onReload, error }: { icon: string; title: string; crawledAt?: string; crawledAtMs?: number; fromCache: boolean; loading: boolean; onReload: () => void; error: string }) {
+  // eslint-disable-next-line react-hooks/purity
   const cacheAge = crawledAtMs ? Math.round((Date.now() - crawledAtMs) / 1000) : 0;
   return (
     <div className="glass-card" style={{ padding: 28 }}>
