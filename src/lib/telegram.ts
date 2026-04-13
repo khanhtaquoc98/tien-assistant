@@ -8,6 +8,7 @@ import { getFuelPrices, formatFuelForTelegram } from './fuel-scraper';
 import { getExchangeRates, formatExchangeForTelegram } from './exchange-scraper';
 import { getFootballSchedule, formatFootballForTelegram } from './football-scraper';
 import { getGospel, formatGospelForTelegram } from './gospel-scraper';
+import { saveAnniversaryDate, getAnniversaryDate, formatAnniversaryForTelegram } from './anniversary';
 
 const TELEGRAM_API = 'https://api.telegram.org/bot';
 
@@ -182,6 +183,7 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
           `💱 /ngoaite - Tỷ giá Vietcombank\n` +
           `⚽ /lichbongda - Lịch thi đấu bóng đá\n` +
           `📖 /loichuahomnay - Lời Chúa ngày hôm nay\n` +
+          `💕 /ngay - Xem/lưu ngày kỷ niệm tình yêu\n` +
           `❓ /help - Trợ giúp`,
           { parse_mode: 'HTML' }
         );
@@ -222,6 +224,46 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
         });
         break;
 
+      case '/ngay': {
+        if (args) {
+          // /ngay DD/MM/YYYY → lưu ngày
+          const result = saveAnniversaryDate(args);
+          if (result.success && result.data) {
+            const d = new Date(result.data.date);
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const yyyy = d.getFullYear();
+            await sendMessage(
+              chatId,
+              `💕 Đã lưu ngày kỷ niệm: <b>${dd}/${mm}/${yyyy}</b>\n\n` +
+              `Gõ /ngay để xem thông tin chi tiết 💝`,
+              { parse_mode: 'HTML' }
+            );
+          } else {
+            await sendMessage(
+              chatId,
+              `❌ ${result.error}`,
+              { parse_mode: 'HTML' }
+            );
+          }
+        } else {
+          // /ngay → xem thông tin
+          const data = getAnniversaryDate();
+          if (!data) {
+            await sendMessage(
+              chatId,
+              `💕 Chưa có ngày kỷ niệm nào được lưu.\n\n` +
+              `Hãy gõ: /ngay DD/MM/YYYY\n` +
+              `Ví dụ: /ngay 14/02/2020`,
+              { parse_mode: 'HTML' }
+            );
+          } else {
+            const msg = formatAnniversaryForTelegram(data);
+            await sendMessage(chatId, msg, { parse_mode: 'HTML' });
+          }
+        }
+        break;
+      }
 
       default:
         await sendMessage(chatId, `❓ Lệnh không hỗ trợ. Gõ /help để xem danh sách lệnh.`);
