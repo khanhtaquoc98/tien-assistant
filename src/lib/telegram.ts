@@ -3,7 +3,7 @@
  * Handles sending messages, editing messages, setting webhooks, and processing updates
  */
 
-import { getGoldPrices, formatGoldForTelegram } from './gold-scraper';
+import { getGoldPrices, formatGoldForTelegram, getBTMHPrices, formatBTMHForTelegram, getBTMCPrices, formatBTMCForTelegram } from './gold-scraper';
 import { getFuelPrices, formatFuelForTelegram } from './fuel-scraper';
 import { getExchangeRates, formatExchangeForTelegram } from './exchange-scraper';
 import { getFootballSchedule, formatFootballForTelegram } from './football-scraper';
@@ -178,7 +178,10 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
         await sendMessage(chatId,
           `👋 Xin chào <b>${username}</b>!\n\n` +
           `Tôi là bot thông tin. Các lệnh:\n\n` +
-          `💰 /giavang - Giá vàng trong nước\n` +
+          `💰 /giavang - Giá vàng (Mi Hồng, BTMH, BTMC)\n` +
+          `💰 /giavang mihong - Giá vàng Mi Hồng\n` +
+          `💰 /giavang btmh - Giá vàng Bảo Tín Mạnh Hải\n` +
+          `💰 /giavang btmc - Giá vàng Bảo Tín Minh Châu\n` +
           `⛽ /giaxang - Giá xăng dầu PVOIL\n` +
           `💱 /ngoaite - Tỷ giá Vietcombank\n` +
           `⚽ /lichbongda - Lịch thi đấu bóng đá\n` +
@@ -190,10 +193,39 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
         break;
 
       case '/giavang':
-        await crawlAndReply(chatId, 'Giá Vàng', async () => {
-          const { data, fromCache } = await getGoldPrices();
-          return { msg: formatGoldForTelegram(data), fromCache, crawledAtMs: data.crawledAtMs };
-        });
+        if (args === 'btmh') {
+          await crawlAndReply(chatId, 'Giá Vàng (Bảo Tín Mạnh Hải)', async () => {
+            const { data, fromCache } = await getBTMHPrices();
+            return { msg: formatBTMHForTelegram(data), fromCache, crawledAtMs: data.crawledAtMs };
+          });
+        } else if (args === 'btmc') {
+          await crawlAndReply(chatId, 'Giá Vàng (Bảo Tín Minh Châu)', async () => {
+            const { data, fromCache } = await getBTMCPrices();
+            return { msg: formatBTMCForTelegram(data), fromCache, crawledAtMs: data.crawledAtMs };
+          });
+        } else if (args === 'mihong') {
+          await crawlAndReply(chatId, 'Giá Vàng (Mi Hồng)', async () => {
+            const { data, fromCache } = await getGoldPrices();
+            return { msg: formatGoldForTelegram(data), fromCache, crawledAtMs: data.crawledAtMs };
+          });
+        } else {
+          await crawlAndReply(chatId, 'Giá Vàng', async () => {
+            const [mihongRes, btmhRes, btmcRes] = await Promise.all([
+              getGoldPrices(),
+              getBTMHPrices(),
+              getBTMCPrices()
+            ]);
+            const msg1 = formatGoldForTelegram(mihongRes.data);
+            const msg2 = formatBTMHForTelegram(btmhRes.data);
+            const msg3 = formatBTMCForTelegram(btmcRes.data);
+            
+            return { 
+              msg: msg1 + '\n\n' + msg2 + '\n\n' + msg3, 
+              fromCache: mihongRes.fromCache && btmhRes.fromCache && btmcRes.fromCache, 
+              crawledAtMs: Math.min(mihongRes.data.crawledAtMs, btmhRes.data.crawledAtMs, btmcRes.data.crawledAtMs) 
+            };
+          });
+        }
         break;
 
       case '/giaxang':
