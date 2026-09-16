@@ -2,36 +2,16 @@
  * Gold Price API Route
  *
  * GET  /api/gold - Lấy giá vàng (có cache 5 phút)
- * POST /api/gold - Force crawl lại hoặc update data
+ * POST /api/gold - Force crawl lại data
  * PUT  /api/gold - Edit một mục giá vàng
  */
 
 import { type NextRequest } from 'next/server';
-import { getGoldPrices, crawlGoldPrices, updateGoldPrice, readGoldData, getBTMHPrices, crawlBTMHPrices, getBTMCPrices, crawlBTMCPrices } from '@/lib/gold-scraper';
+import { getGoldPrices, crawlGoldPrices, updateGoldPrice, readGoldData } from '@/lib/gold-scraper';
 
 export async function GET(request: NextRequest) {
   try {
     const force = request.nextUrl.searchParams.get('force') === 'true';
-    const source = request.nextUrl.searchParams.get('source');
-
-    if (source === 'btmh') {
-      const { data, fromCache } = await getBTMHPrices(force);
-      return Response.json({
-        success: true,
-        fromCache,
-        data,
-      });
-    }
-
-    if (source === 'btmc') {
-      const { data, fromCache } = await getBTMCPrices(force);
-      return Response.json({
-        success: true,
-        fromCache,
-        data,
-      });
-    }
-
     const { data, fromCache } = await getGoldPrices(force);
 
     return Response.json({
@@ -47,30 +27,8 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   try {
-    const source = request.nextUrl.searchParams.get('source');
-
-    if (source === 'btmh') {
-      const data = await crawlBTMHPrices();
-      return Response.json({
-        success: true,
-        fromCache: false,
-        message: 'Đã crawl lại giá vàng BTMH thành công',
-        data,
-      });
-    }
-
-    if (source === 'btmc') {
-      const data = await crawlBTMCPrices();
-      return Response.json({
-        success: true,
-        fromCache: false,
-        message: 'Đã crawl lại giá vàng BTMC thành công',
-        data,
-      });
-    }
-
     // Force crawl mới
     const data = await crawlGoldPrices();
 
