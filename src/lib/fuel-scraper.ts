@@ -2,7 +2,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { readJsonFile, writeJsonFile } from './data-store';
 
-const FUEL_URL = 'https://www.pvoil.com.vn/tin-gia-xang-dau';
+const FUEL_URL = 'https://vietnambiz.vn/gia-xang-dau-hom-nay.html';
 const DATA_FILENAME = 'fuel_prices.json';
 const CACHE_DURATION_MS = 5 * 60 * 1000;
 
@@ -37,13 +37,13 @@ export function isFuelDataStale(data: FuelData | null): boolean {
 }
 
 /**
- * Crawl giá xăng từ PVOIL (server-side rendered)
+ * Crawl giá xăng từ nguồn PVOIL
  * Table: TT | Mặt hàng | Giá điều chỉnh (đ) | Chênh lệch
  */
 export async function crawlFuelPrices(): Promise<FuelData> {
   const response = await axios.get(FUEL_URL, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)',
       'Accept': 'text/html,application/xhtml+xml',
       'Accept-Language': 'vi-VN,vi;q=0.9,en;q=0.8',
     },
@@ -55,17 +55,15 @@ export async function crawlFuelPrices(): Promise<FuelData> {
 
   // Extract price date from header text
   let priceDate = '';
-  $('th').each((_, el) => {
-    const text = $(el).text();
-    const dateMatch = text.match(/(\d{2}:\d{2}\s+ngày\s+\d{2}\/\d{2}\/\d{4})/);
-    if (dateMatch) {
-      priceDate = dateMatch[1];
-    }
-  });
+  const headerText = $('table.table thead, .oilpricescontainer, table').first().text();
+  const dateMatch = headerText.match(/(\d{2}:\d{2}\s+ngày\s+\d{2}\/\d{2}\/\d{4})/);
+  if (dateMatch) {
+    priceDate = dateMatch[1];
+  }
 
-  // Parse table - PVOIL table is inside .oilpricescontainer or first table
-  const table = $('.oilpricescontainer table').first().length
-    ? $('.oilpricescontainer table').first()
+  // Parse table - PVOIL table
+  const table = $('table.table').first().length
+    ? $('table.table').first()
     : $('table').first();
 
   table.find('tbody tr, tr').each((i, row) => {
@@ -77,7 +75,7 @@ export async function crawlFuelPrices(): Promise<FuelData> {
 
       const product = $(cells[1]).text().trim();
       const priceText = $(cells[2]).text().trim();
-      // Parse "30.690 đ" -> 30690
+      // Parse "24.230 đ" -> 24230
       const priceNum = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(/\./g, '').replace(/,/g, '.')) || 0;
 
       let change = 0;
@@ -101,7 +99,7 @@ export async function crawlFuelPrices(): Promise<FuelData> {
   });
 
   if (prices.length === 0) {
-    throw new Error('Không tìm thấy dữ liệu giá xăng dầu trên PVOIL');
+    throw new Error('Không tìm thấy dữ liệu giá xăng dầu');
   }
 
   const now = new Date();
@@ -110,7 +108,7 @@ export async function crawlFuelPrices(): Promise<FuelData> {
     priceDate: priceDate || 'N/A',
     crawledAt: now.toISOString(),
     crawledAtMs: now.getTime(),
-    source: FUEL_URL,
+    source: 'PVOIL',
   };
 
   writeFuelData(fuelData);
