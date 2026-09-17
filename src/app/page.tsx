@@ -418,15 +418,19 @@ function TelegramPanel() {
         <div style={{ display: "grid", gap: 8 }}>
           {[
             { cmd: "/start", desc: "Bắt đầu sử dụng bot" },
-            { cmd: "/giavang", desc: "Giá vàng (cache 5 phút)" },
+            { cmd: "/don-hang [mã]", desc: "Quét hãng & tự động theo dõi đơn hàng (17TRACK)" },
+            { cmd: "/ds-donhang", desc: "Xem danh sách đơn hàng đang theo dõi" },
+            { cmd: "/huy-donhang [mã]", desc: "Hủy theo dõi một đơn hàng" },
+            { cmd: "/giavang", desc: "Giá vàng Mi Hồng (cache 5 phút)" },
             { cmd: "/giaxang", desc: "Giá xăng dầu PVOIL (cache 5 phút)" },
             { cmd: "/ngoaite", desc: "Tỷ giá ngoại tệ VCB (cache 5 phút)" },
-            { cmd: "/scrape [url]", desc: "Scrape nội dung từ URL" },
-            { cmd: "/info", desc: "Thông tin bot" },
+            { cmd: "/lichbongda", desc: "Lịch thi đấu bóng đá" },
+            { cmd: "/loichuahomnay", desc: "Lời Chúa ngày hôm nay" },
+            { cmd: "/ngay [ngày]", desc: "Xem / lưu ngày kỷ niệm tình yêu" },
             { cmd: "/help", desc: "Trợ giúp" },
           ].map((item, i) => (
             <div key={i} style={{ display: "flex", gap: 14, padding: "10px 14px", background: "var(--bg-input)", borderRadius: 10, alignItems: "center" }}>
-              <code style={{ color: "var(--accent-primary)", fontFamily: "var(--font-jetbrains), monospace", fontSize: "0.85rem", fontWeight: 600, minWidth: 130 }}>{item.cmd}</code>
+              <code style={{ color: "var(--accent-primary)", fontFamily: "var(--font-jetbrains), monospace", fontSize: "0.85rem", fontWeight: 600, minWidth: 150 }}>{item.cmd}</code>
               <span style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>{item.desc}</span>
             </div>
           ))}
@@ -439,6 +443,8 @@ function TelegramPanel() {
 /* ==================== API DOCS PANEL ==================== */
 function ApiDocsPanel() {
   const endpoints = [
+    { method: "POST", path: "/api/17track/webhook", desc: "Webhook nhận cập nhật đơn hàng từ 17TRACK" },
+    { method: "GET", path: "/api/17track/webhook", desc: "Kiểm tra trạng thái Webhook 17TRACK" },
     { method: "GET", path: "/api/gold", desc: "Giá vàng (cache 5p, ?force=true)" },
     { method: "POST", path: "/api/gold", desc: "Force crawl giá vàng" },
     { method: "PUT", path: "/api/gold", desc: "Sửa giá vàng" },
