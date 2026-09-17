@@ -13,6 +13,9 @@ import {
   registerTracking,
   getTrackingInfo,
   formatTrackingForTelegram,
+  STATUS_MAP,
+  translateEventDescriptionVi,
+  translateSubStatusVi,
 } from './tracking-service';
 import {
   subscribeChatToOrder,
@@ -286,10 +289,14 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
             let msg = `📦 <b>DANH SÁCH ĐƠN HÀNG BẠN ĐANG THEO DÕI:</b>\n`;
             msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
             for (const ord of userOrders) {
+              const meta = ord.lastStatus ? STATUS_MAP[ord.lastStatus] : null;
+              const statusLabel = meta?.label || ord.lastStatus || 'Đang cập nhật';
+              const statusIcon = meta?.icon || '📍';
               msg += `🔖 Mã: <code>${ord.number}</code>\n`;
               if (ord.carrierName) msg += `🏢 Hãng: <b>${ord.carrierName}</b>\n`;
-              msg += `📍 Trạng thái: <b>${ord.lastStatus || 'Đang cập nhật'}</b>\n`;
-              if (ord.lastEventDesc) msg += `📝 Diễn biến: <i>${ord.lastEventDesc}</i>\n`;
+              msg += `${statusIcon} Trạng thái: <b>${statusLabel}</b>\n`;
+              if (ord.lastSubStatus) msg += `ℹ️ Chi tiết: <i>${translateSubStatusVi(ord.lastSubStatus)}</i>\n`;
+              if (ord.lastEventDesc) msg += `📝 Diễn biến: <i>${translateEventDescriptionVi(ord.lastEventDesc)}</i>\n`;
               msg += `\n`;
             }
             msg += `💡 Để thêm đơn mới: <code>/don-hang &lt;mã vận đơn&gt;</code>\n`;
@@ -339,8 +346,17 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
             break;
           }
 
-          // 3. Query current tracking information
-          const trackInfo = await getTrackingInfo(trackingNumber, regResult.carrier);
+          // 3. Query current tracking information (with auto-retry if 17TRACK is synchronizing first-time)
+          let trackInfo = await getTrackingInfo(trackingNumber, regResult.carrier);
+
+          if (!trackInfo.success || trackInfo.status === 'NotFound') {
+            // Wait 2.5s and retry once as 17TRACK needs a few seconds to query external carrier API
+            await new Promise((resolve) => setTimeout(resolve, 2500));
+            const retryInfo = await getTrackingInfo(trackingNumber, regResult.carrier);
+            if (retryInfo.success && retryInfo.status !== 'NotFound') {
+              trackInfo = retryInfo;
+            }
+          }
 
           if (!trackInfo.success) {
             // Still subscribe chat so when carrier registers/updates via webhook, user is alerted
@@ -349,16 +365,18 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
               carrierName: regResult.carrierName,
             });
 
-            const notFoundMsg =
-              `📦 <b>ĐÃ GHI NHẬN ĐƠN HÀNG:</b> <code>${trackingNumber}</code>\n\n` +
+            const syncMsg =
+              `📦 <b>ĐÃ ĐĂNG KÝ THEO DÕI:</b> <code>${trackingNumber}</code>\n\n` +
               `🏢 Hãng vận chuyển: <b>${regResult.carrierName || 'Tự động nhận diện'}</b>\n` +
-              `📍 Trạng thái: 📝 <i>Chưa có dữ liệu hành trình trên hệ thống nhà vận chuyển.</i>\n\n` +
-              `🔔 <i>Bot đã đăng ký theo dõi đơn hàng này. Khi có cập nhật mới qua Webhook 17TRACK, bot sẽ tự động thông báo ngay cho bạn!</i>`;
+              `⏳ <b>Trạng thái:</b> <i>17TRACK vừa tiếp nhận đơn và đang đồng bộ dữ liệu với hãng vận chuyển (thường mất 10-30 giây).</i>\n\n` +
+              `👉 <b>Bạn có thể:</b>\n` +
+              `• Gõ lại <code>/don-hang ${trackingNumber}</code> sau ít giây để xem hành trình\n` +
+              `• Hoặc chờ Webhook tự động bắn tin nhắn khi hoàn tất!`;
 
             if (pendingMsgId) {
-              await editMessage(chatId, pendingMsgId, notFoundMsg, { parse_mode: 'HTML' });
+              await editMessage(chatId, pendingMsgId, syncMsg, { parse_mode: 'HTML' });
             } else {
-              await sendMessage(chatId, notFoundMsg, { parse_mode: 'HTML' });
+              await sendMessage(chatId, syncMsg, { parse_mode: 'HTML' });
             }
             break;
           }
@@ -406,10 +424,14 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
           msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
           for (let i = 0; i < userOrders.length; i++) {
             const ord = userOrders[i];
+            const meta = ord.lastStatus ? STATUS_MAP[ord.lastStatus] : null;
+            const statusLabel = meta?.label || ord.lastStatus || 'Đang cập nhật';
+            const statusIcon = meta?.icon || '📍';
             msg += `${i + 1}. 🔖 <code>${ord.number}</code>\n`;
             if (ord.carrierName) msg += `   🏢 Hãng: <b>${ord.carrierName}</b>\n`;
-            msg += `   📍 Trạng thái: <b>${ord.lastStatus || 'Đang cập nhật'}</b>\n`;
-            if (ord.lastEventDesc) msg += `   📝 Diễn biến: <i>${ord.lastEventDesc}</i>\n`;
+            msg += `   ${statusIcon} Trạng thái: <b>${statusLabel}</b>\n`;
+            if (ord.lastSubStatus) msg += `   ℹ️ Chi tiết: <i>${translateSubStatusVi(ord.lastSubStatus)}</i>\n`;
+            if (ord.lastEventDesc) msg += `   📝 Diễn biến: <i>${translateEventDescriptionVi(ord.lastEventDesc)}</i>\n`;
             msg += `\n`;
           }
           msg += `💡 Để kiểm tra lại một đơn: <code>/don-hang &lt;mã&gt;</code>\n`;

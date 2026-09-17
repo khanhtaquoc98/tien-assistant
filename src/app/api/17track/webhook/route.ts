@@ -14,6 +14,8 @@ import {
   KNOWN_CARRIERS,
   STATUS_MAP,
   formatDateTimeVi,
+  translateEventDescriptionVi,
+  translateSubStatusVi,
 } from '@/lib/tracking-service';
 import {
   getTrackedOrder,
@@ -157,10 +159,12 @@ export async function POST(request: NextRequest) {
         item.track_info?.latest_event?.time_iso ||
         item.track?.z0?.d ||
         new Date().toISOString();
-      let eventDesc =
+      const rawEventDesc =
         item.track_info?.latest_event?.description ||
         item.track?.z0?.c ||
         'Cập nhật tiến trình vận chuyển';
+      const eventDesc = translateEventDescriptionVi(rawEventDesc);
+      const subStatusVi = translateSubStatusVi(subStatus);
       let eventLocation =
         item.track_info?.latest_event?.location ||
         item.track_info?.latest_event?.address?.city ||
@@ -208,15 +212,15 @@ export async function POST(request: NextRequest) {
         msg += `🏢 Hãng vận chuyển: <b>${carrierName}</b>${carrierCode ? ` (<code>${carrierCode}</code>)` : ''}\n`;
       }
       msg += `📍 Trạng thái: ${statusMeta.icon} <b>${statusMeta.label}</b>\n`;
-      if (subStatus) {
-        msg += `ℹ️ Chi tiết trạng thái: <i>${subStatus}</i>\n`;
+      if (subStatusVi) {
+        msg += `ℹ️ Chi tiết: <i>${subStatusVi}</i>\n`;
       }
       msg += `\n📌 <b>Sự kiện vừa ghi nhận:</b>\n`;
       msg += `🕒 <i>${formatDateTimeVi(eventTime)}</i>\n`;
       if (eventLocation) {
         msg += `📍 Vị trí: <b>${eventLocation}</b>\n`;
       }
-      msg += `📝 Nội dung: <i>${eventDesc}</i>\n`;
+      msg += `📝 Diễn biến: <b>${eventDesc}</b>\n`;
       msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
       msg += `✨ <i>Thông báo tự động nhận từ Webhook 17TRACK</i>`;
 

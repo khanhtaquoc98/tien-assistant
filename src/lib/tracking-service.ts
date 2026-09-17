@@ -87,6 +87,145 @@ export const STATUS_MAP: Record<string, { label: string; icon: string }> = {
   Expired: { label: 'Vận đơn đã quá hạn theo dõi', icon: '⏳' },
 };
 
+// Sub-status dictionary for fine-grained progress in Vietnamese
+export const SUB_STATUS_MAP: Record<string, string> = {
+  OutForDelivery_Other: 'Đang trên đường phát hàng đến người nhận',
+  InTransit_Other: 'Đang luân chuyển qua các trạm / kho trung chuyển',
+  InTransit_Arrival: 'Đã đến trạm / kho phân loại',
+  InTransit_Departure: 'Đã rời trạm / kho phân loại',
+  InTransit_Customs: 'Đang thực hiện thủ tục hải quan',
+  InfoReceived: 'Đã tạo vận đơn điện tử',
+  InfoReceived_Other: 'Người gửi đã tạo thông tin vận đơn',
+  PickedUp_Other: 'Bưu tá đã lấy kiện hàng thành công',
+  AvailableForPickup_Other: 'Đã đến bưu cục, sẵn sàng nhận hàng',
+  Delivered_Other: 'Đã giao hàng thành công',
+  DeliveryFailure_Other: 'Giao hàng chưa thành công (sẽ phát lại)',
+  DeliveryFailure_NoOneAtHome: 'Người nhận vắng mặt khi phát hàng',
+  DeliveryFailure_AddressIncorrect: 'Địa chỉ người nhận chưa chính xác',
+  DeliveryFailure_Rejected: 'Người nhận từ chối nhận hàng',
+  Exception_Other: 'Phát sinh sự cố bất khả kháng trong hành trình',
+  Expired_Other: 'Vận đơn đã hết hạn lưu kho / theo dõi',
+};
+
+/**
+ * Translate sub_status code to Vietnamese
+ */
+export function translateSubStatusVi(subStatus?: string): string {
+  if (!subStatus) return '';
+  return SUB_STATUS_MAP[subStatus] || subStatus;
+}
+
+/**
+ * Translate logistics events from English / Carrier formats to Vietnamese
+ */
+export function translateEventDescriptionVi(description?: string): string {
+  if (!description) return '';
+  let text = description.trim();
+
+  // If already Vietnamese or has Vietnamese tone marks, return as-is
+  if (/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text)) {
+    return text;
+  }
+
+  // 1. SPX & Common Delivery Statuses
+  if (/^Parcel is out for delivery/i.test(text)) {
+    return 'Bưu tá đang đi phát hàng đến bạn';
+  }
+  if (/^Out for delivery/i.test(text)) {
+    return 'Đang trên đường phát hàng đến bạn';
+  }
+  if (/^Parcel has arrived at station\s*:?\s*(.+)$/i.test(text)) {
+    const station = text.replace(/^Parcel has arrived at station\s*:?\s*/i, '').trim();
+    return `Kiện hàng đã đến trạm: ${station}`;
+  }
+  if (/^Parcel has arrived at station$/i.test(text)) {
+    return 'Kiện hàng đã đến trạm / kho phân loại';
+  }
+  if (/^Parcel has departed from station\s*:?\s*(.+)$/i.test(text)) {
+    const station = text.replace(/^Parcel has departed from station\s*:?\s*/i, '').trim();
+    return `Kiện hàng đã rời trạm: ${station}`;
+  }
+  if (/^Parcel has departed from station$/i.test(text)) {
+    return 'Kiện hàng đã rời trạm / kho phân loại';
+  }
+  if (/^Parcel has been picked up by courier/i.test(text)) {
+    return 'Bưu tá đã nhận kiện hàng từ người gửi';
+  }
+  if (/^Sender is preparing to ship your parcel/i.test(text)) {
+    return 'Người gửi đang đóng gói & chuẩn bị kiện hàng';
+  }
+  if (/^Shipment information received/i.test(text)) {
+    return 'Hệ thống đã tiếp nhận thông tin vận đơn';
+  }
+
+  // 2. Arrival / Departure at Hubs & Sorting Centers
+  if (/^Arrived at (?:the )?(?:sorting center|facility|hub|station)\s*:?\s*(.*)/i.test(text)) {
+    const loc = text.replace(/^Arrived at (?:the )?(?:sorting center|facility|hub|station)\s*:?\s*/i, '').trim();
+    return loc ? `Đã đến trung tâm phân loại: ${loc}` : 'Đã đến trung tâm phân loại / kho';
+  }
+  if (/^Departed from (?:the )?(?:sorting center|facility|hub|station)\s*:?\s*(.*)/i.test(text)) {
+    const loc = text.replace(/^Departed from (?:the )?(?:sorting center|facility|hub|station)\s*:?\s*/i, '').trim();
+    return loc ? `Đã xuất kho / rời trạm: ${loc}` : 'Đã rời trung tâm phân loại / kho';
+  }
+
+  // 3. Delivery Results
+  if (/^Parcel has been delivered/i.test(text) || /^Delivered(?: successfully)?$/i.test(text)) {
+    return 'Giao hàng thành công đến người nhận';
+  }
+  if (/^Delivered,\s*(.+)/i.test(text)) {
+    const detail = text.replace(/^Delivered,\s*/i, '').trim();
+    return `Đã giao hàng thành công: ${detail}`;
+  }
+  if (/^Delivery (?:attempt )?failed/i.test(text) || /^Unsuccessful delivery attempt/i.test(text)) {
+    return 'Giao hàng chưa thành công (sẽ sắp xếp giao lại)';
+  }
+  if (/^Delivery rescheduled/i.test(text)) {
+    return 'Hẹn lịch giao hàng vào thời gian khác';
+  }
+
+  // 4. Pickup & Hub Arrival
+  if (/^Available for pickup/i.test(text) || /^Ready for pickup/i.test(text) || /^Waiting for customer pickup/i.test(text)) {
+    return 'Kiện hàng đã đến bưu cục, sẵn sàng chờ bạn đến lấy';
+  }
+  if (/^Package ready for dispatch/i.test(text) || /^Order dispatched/i.test(text)) {
+    return 'Kiện hàng đã sẵn sàng xuất kho chuyển phát';
+  }
+  if (/^Handed over to carrier/i.test(text) || /^Received by delivery partner/i.test(text)) {
+    return 'Đã bàn giao kiện hàng cho đối tác vận chuyển';
+  }
+  if (/^Shipment collected/i.test(text)) {
+    return 'Bưu cục đã tiếp nhận kiện hàng';
+  }
+
+  // 5. Customs & International Flights
+  if (/^Customs clearance (?:is )?in progress/i.test(text)) {
+    return 'Đang làm thủ tục thông quan hải quan';
+  }
+  if (/^Customs clearance (?:has been )?completed/i.test(text) || /^Import customs clearance complete/i.test(text)) {
+    return 'Thông quan hải quan thành công';
+  }
+  if (/^Held by customs/i.test(text)) {
+    return 'Kiện hàng đang được kiểm tra tại hải quan';
+  }
+  if (/^Departed from origin country/i.test(text)) {
+    return 'Kiện hàng đã rời quốc gia xuất phát (đang bay)';
+  }
+  if (/^Arrived at destination country/i.test(text)) {
+    return 'Kiện hàng đã hạ cánh tại quốc gia đích';
+  }
+
+  // 6. Returns
+  if (/^Returned to sender/i.test(text)) {
+    return 'Kiện hàng đã hoàn trả về người gửi';
+  }
+  if (/^Returning to sender/i.test(text)) {
+    return 'Kiện hàng đang trên đường chuyển hoàn về người gửi';
+  }
+
+  return text;
+}
+
+
 function getApiKey(): string {
   const key = process.env.TRACK17_API_KEY || 'A32C33927C9C06266BC2C1452488E22F';
   if (!key) {
@@ -276,7 +415,7 @@ export async function getTrackingInfo(
       latestEvent = {
         time: rawLatestEvent.time_iso || rawLatestEvent.time_raw?.date || '',
         timeIso: rawLatestEvent.time_iso,
-        description: rawLatestEvent.description,
+        description: translateEventDescriptionVi(rawLatestEvent.description),
         location: rawLatestEvent.location || rawLatestEvent.address?.city || '',
         stage: rawLatestEvent.stage,
       };
@@ -287,7 +426,7 @@ export async function getTrackingInfo(
     const events: TrackingEvent[] = rawEvents.map((e: any) => ({
       time: e.time_iso || e.time_raw?.date || '',
       timeIso: e.time_iso,
-      description: e.description,
+      description: translateEventDescriptionVi(e.description),
       location: e.location || e.address?.city || '',
       stage: e.stage,
     }));
@@ -306,7 +445,7 @@ export async function getTrackingInfo(
       status: rawStatus,
       statusTextVi: statusMeta.label,
       statusIcon: statusMeta.icon,
-      subStatus,
+      subStatus: translateSubStatusVi(subStatus),
       latestEvent,
       events,
       originCountry,
