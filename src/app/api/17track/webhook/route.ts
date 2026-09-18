@@ -19,10 +19,15 @@ import {
 } from '@/lib/tracking-service';
 import {
   getTrackedOrder,
+  getTrackedOrderWithSync,
   updateOrderTrackingStatus,
   getTrackedOrders,
+  syncOrdersFrom17Track,
 } from '@/lib/tracking-store';
 import { sendMessage } from '@/lib/telegram';
+
+export const maxDuration = 30;
+export const dynamic = 'force-dynamic';
 
 interface WebhookItem {
   number?: string;
@@ -181,8 +186,9 @@ export async function POST(request: NextRequest) {
         icon: '📦',
       };
 
-      // Retrieve existing order in store
-      const order = getTrackedOrder(trackingNumber);
+      // Retrieve existing order in store (with auto cloud sync if cold start)
+      const order =
+        (await getTrackedOrderWithSync(trackingNumber)) || getTrackedOrder(trackingNumber);
 
       // Avoid spamming if identical event has already been notified
       const isDuplicate =
@@ -197,9 +203,12 @@ export async function POST(request: NextRequest) {
       }
 
       // Determine which Telegram chat IDs should receive notifications
+      const itemTag = item.tag ? String(item.tag) : undefined;
       const chatIds =
         order && order.chatIds && order.chatIds.length > 0
           ? order.chatIds
+          : itemTag
+          ? [itemTag]
           : process.env.TELEGRAM_CHAT_ID
           ? [process.env.TELEGRAM_CHAT_ID]
           : [];
@@ -224,15 +233,22 @@ export async function POST(request: NextRequest) {
       msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
       msg += `✨ <i>Thông báo tự động nhận từ Webhook 17TRACK</i>`;
 
-      // Broadcast to all subscriber chats
+      // Broadcast to all subscriber chats in parallel to prevent Vercel serverless 504 timeouts
       let sentCount = 0;
-      for (const chatId of chatIds) {
-        try {
-          await sendMessage(chatId, msg, { parse_mode: 'HTML' });
-          sentCount++;
-        } catch (sendErr) {
-          console.error(`Failed to send tracking update to chat ${chatId}:`, sendErr);
-        }
+      if (chatIds.length > 0) {
+        const sendPromises = chatIds.map(async (chatId) => {
+          try {
+            await sendMessage(chatId, msg, { parse_mode: 'HTML' });
+            return true;
+          } catch (sendErr) {
+            console.error(`Failed to send tracking update to chat ${chatId}:`, sendErr);
+            return false;
+          }
+        });
+        const outcomes = await Promise.allSettled(sendPromises);
+        sentCount = outcomes.filter(
+          (o) => o.status === 'fulfilled' && Boolean(o.value)
+        ).length;
       }
 
       // Update storage
@@ -266,7 +282,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  const trackedOrders = getTrackedOrders();
+  const trackedOrders = await syncOrdersFrom17Track();
   const count = Object.keys(trackedOrders).length;
 
   return Response.json({
@@ -274,6 +290,12 @@ export async function GET() {
     service: '17TRACK Webhook Receiver',
     endpoint: '/api/17track/webhook',
     trackedOrdersCount: count,
+    orders: Object.values(trackedOrders).map((o) => ({
+      number: o.number,
+      carrierName: o.carrierName,
+      lastStatus: o.lastStatus,
+      lastEventDesc: o.lastEventDesc,
+    })),
     instructions: {
       step1: 'Truy cập https://api.17track.net và đăng nhập vào tài khoản',
       step2: 'Vào Settings (Cài đặt) -> Webhook',

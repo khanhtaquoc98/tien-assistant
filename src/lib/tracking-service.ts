@@ -237,16 +237,19 @@ function getApiKey(): string {
 /**
  * Register a tracking number with 17TRACK.
  * When carrier is omitted, 17TRACK automatically detects the carrier.
+ * tag can be used to associate chat ID or owner identifier.
  */
 export async function registerTracking(
   trackingNumber: string,
-  carrier?: number
+  carrier?: number,
+  tag?: string
 ): Promise<TrackingRegisterResult> {
   const apiKey = getApiKey();
   const normalizedNumber = trackingNumber.trim();
 
-  const payloadItem: { number: string; carrier?: number } = { number: normalizedNumber };
+  const payloadItem: { number: string; carrier?: number; tag?: string } = { number: normalizedNumber };
   if (carrier) payloadItem.carrier = carrier;
+  if (tag) payloadItem.tag = String(tag);
 
   try {
     const res = await fetch(`${API_BASE_URL}/register`, {
@@ -572,3 +575,81 @@ export function verify17TrackSignature(
     return false;
   }
 }
+
+export interface Track17ListItem {
+  number: string;
+  carrier?: number;
+  package_status?: string;
+  latest_event_time?: string;
+  latest_event_info?: string;
+  tag?: string | null;
+  register_time?: string;
+  track_time?: string;
+  tracking_status?: string;
+  stop_track_time?: string | null;
+}
+
+/**
+ * Fetch all registered orders directly from 17TRACK Cloud API.
+ * This guarantees persistent state even on ephemeral serverless platforms like Vercel.
+ */
+export async function getTrackedListFrom17Track(): Promise<Track17ListItem[]> {
+  const apiKey = getApiKey();
+  try {
+    const res = await fetch(`${API_BASE_URL}/gettracklist`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        '17token': apiKey,
+      },
+      body: JSON.stringify({ page: 1, size: 40 }),
+    });
+
+    if (!res.ok) {
+      console.error(`17TRACK gettracklist HTTP error: ${res.status}`);
+      return [];
+    }
+
+    const data = await res.json();
+    if (data.code !== 0 || !Array.isArray(data.data?.accepted)) {
+      return [];
+    }
+
+    return data.data.accepted as Track17ListItem[];
+  } catch (err) {
+    console.error('Failed to get tracked list from 17TRACK:', err);
+    return [];
+  }
+}
+
+/**
+ * Halt automatic tracking for a number on 17TRACK
+ */
+export async function stopTracking17Track(
+  trackingNumber: string,
+  carrier?: number
+): Promise<boolean> {
+  const apiKey = getApiKey();
+  const normalizedNumber = trackingNumber.trim();
+  const payloadItem: { number: string; carrier?: number } = { number: normalizedNumber };
+  if (carrier) payloadItem.carrier = carrier;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/stoptrack`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        '17token': apiKey,
+      },
+      body: JSON.stringify([payloadItem]),
+    });
+
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.code === 0 && Array.isArray(data.data?.accepted) && data.data.accepted.length > 0;
+  } catch (err) {
+    console.error('Failed to stop tracking on 17TRACK:', err);
+    return false;
+  }
+}
+

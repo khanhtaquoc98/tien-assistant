@@ -20,6 +20,7 @@ import {
 import {
   subscribeChatToOrder,
   getOrdersForChat,
+  getOrdersForChatWithSync,
   unsubscribeChatFromOrder,
 } from './tracking-store';
 
@@ -284,7 +285,7 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
       case '/donhang': {
         if (!args) {
           // No tracking number provided -> show list of tracked orders or help
-          const userOrders = getOrdersForChat(chatId);
+          const userOrders = await getOrdersForChatWithSync(chatId);
           if (userOrders.length > 0) {
             let msg = `📦 <b>DANH SÁCH ĐƠN HÀNG BẠN ĐANG THEO DÕI:</b>\n`;
             msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -333,8 +334,8 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
         const pendingMsgId = pendingRes.result?.message_id;
 
         try {
-          // 2. Register tracking number with 17TRACK (auto carrier detection)
-          const regResult = await registerTracking(trackingNumber);
+          // 2. Register tracking number with 17TRACK (auto carrier detection, with chatId as tag)
+          const regResult = await registerTracking(trackingNumber, undefined, String(chatId));
 
           if (!regResult.success && !regResult.alreadyRegistered) {
             const errorText = `❌ <b>Không thể đăng ký đơn hàng:</b> <code>${trackingNumber}</code>\n\n${regResult.error || 'Vui lòng kiểm tra lại mã vận đơn.'}`;
@@ -412,7 +413,7 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
 
       case '/ds-donhang':
       case '/dsdonhang': {
-        const userOrders = getOrdersForChat(chatId);
+        const userOrders = await getOrdersForChatWithSync(chatId);
         if (userOrders.length === 0) {
           await sendMessage(
             chatId,
@@ -451,7 +452,7 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
           );
         } else {
           const targetNumber = args.trim().split(/\s+/)[0];
-          const removed = unsubscribeChatFromOrder(targetNumber, chatId);
+          const removed = await unsubscribeChatFromOrder(targetNumber, chatId);
           if (removed) {
             await sendMessage(
               chatId,

@@ -22,9 +22,21 @@ export function ensureDataDir(): void {
 export function readJsonFile<T>(filename: string): T | null {
   try {
     const filePath = path.join(DATA_DIR, filename);
-    if (!fs.existsSync(filePath)) return null;
-    const raw = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(raw) as T;
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      return JSON.parse(raw) as T;
+    }
+
+    // Fallback: If on Vercel and file is not yet written to /tmp/data, check bundled data directory
+    if (IS_VERCEL) {
+      const bundledPath = path.join(process.cwd(), 'data', filename);
+      if (fs.existsSync(bundledPath)) {
+        const raw = fs.readFileSync(bundledPath, 'utf-8');
+        return JSON.parse(raw) as T;
+      }
+    }
+
+    return null;
   } catch {
     return null;
   }
